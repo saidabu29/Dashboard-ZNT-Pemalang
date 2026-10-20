@@ -56,7 +56,7 @@ function num(v){if(typeof v==='number')return v;let s=String(v??'').trim();if(!s
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 let adminLoggedIn=false;
 // Isi URL dan publishable/anon key project Supabase Anda di bawah ini. Jangan pernah masukkan service_role/secret key.
-const SUPABASE_URL = 'https://iwgplqzvvzjpbkwcxddq.supabase.co/rest/v1/';
+const SUPABASE_URL = 'https://iwgplqzvvzjpbkwcxddq.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_sLI53Zb07IIax56PzLumcg_X07OdhJS';
 const CLOUD_ENABLED = /^https:\/\//.test(SUPABASE_URL) && !SUPABASE_URL.includes('ISI_PROJECT_URL') && !!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_PUBLISHABLE_KEY.includes('ISI_PUBLISHABLE');
 const db = CLOUD_ENABLED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
