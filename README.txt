@@ -6,8 +6,8 @@ ISI PAKET
 
 FITUR YANG DIPERTAHANKAN
 - Peta zona ZNT dan titik sampel.
-- Impor polygon dari ZIP Shapefile atau GeoJSON.
-- Impor CSV sampel.
+- Impor polygon zona dari ZIP Shapefile (berisi .shp, .shx, .dbf, dan sebaiknya .prj); zona disimpan sebagai fitur GeoJSON di Supabase agar tetap ada setelah refresh.
+- Impor data sampel tetap menggunakan CSV.
 - Tren harian memakai tanggal pelaksanaan sampel.
 - Grafik jumlah sampel per nama surveyor dengan angka pada batang grafik.
 - Rekap target/realisasi per zona, status capaian, rata-rata nilai tanah, dan ekspor CSV.
@@ -24,7 +24,7 @@ LANGKAH SETUP SINGKAT
 7. Upload index.html dan SUPABASE_SETUP.sql ke repository GitHub (README juga boleh diunggah).
 8. Aktifkan GitHub Pages dari Settings > Pages > Deploy from a branch > main > /(root).
 9. Buka URL GitHub Pages. Dashboard membaca data dari Supabase; admin klik Login Admin untuk mengelola data.
-10. Login sebagai admin, lalu impor ZIP Shapefile/GeoJSON zona dan CSV sampel. Data zona/sampel akan tersimpan di Supabase.
+10. Login sebagai admin, lalu unggah zona menggunakan ZIP Shapefile (bukan CSV; jangan unggah file .shp tunggal) dan unggah sampel menggunakan CSV. Data zona/sampel akan tersimpan di Supabase.
 
 FORMAT CSV YANG DISARANKAN
 id_sampel,tanggal_pelaksanaan_sampel,latitude,longitude,nilai_tanah,nama_surveyor
