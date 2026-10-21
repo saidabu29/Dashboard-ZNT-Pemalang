@@ -59,7 +59,7 @@ const SUPABASE_URL = 'https://iwgplqzvvzjpbkwcxddq.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_sLI53Zb07IIax56PzLumcg_X07OdhJS';
 const CLOUD_ENABLED = /^https:\/\//.test(SUPABASE_URL) && !SUPABASE_URL.includes('ISI_PROJECT_URL') && !!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_PUBLISHABLE_KEY.includes('ISI_PUBLISHABLE');
 const db = CLOUD_ENABLED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
-function persistState(){try{localStorage.setItem('zntDashboardStateV1',JSON.stringify({zones:zones.map(z=>({id:z.id,target:z.target,surveyor:z.surveyor||'',feature:z.feature})),samples:samples.map(s=>({id:s.id,lat:s.lat,lng:s.lng,date:s.date,value:Number.isFinite(s.value)?s.value:null,surveyor:s.surveyor||'',raw:s.raw||{}})),targetDefault}));}catch(e){console.warn('State belum dapat disimpan',e)}}
+function persistState(){if(CLOUD_ENABLED)return;try{localStorage.setItem('zntDashboardStateV1',JSON.stringify({zones:zones.map(z=>({id:z.id,target:z.target,surveyor:z.surveyor||'',feature:z.feature})),samples:samples.map(s=>({id:s.id,lat:s.lat,lng:s.lng,date:s.date,value:Number.isFinite(s.value)?s.value:null,surveyor:s.surveyor||'',raw:s.raw||{}})),targetDefault}));}catch(e){console.warn('State lokal terlalu besar; data cloud tidak disimpan di localStorage.',e.message)}}
 function restoreState(){try{const raw=localStorage.getItem('zntDashboardStateV1');if(!raw)return false;const st=JSON.parse(raw);targetDefault=Number(st.targetDefault??5);zones=(st.zones||[]).map(z=>({id:String(z.id),target:Number(z.target??targetDefault),surveyor:z.surveyor||'',count:0,geometry:z.feature?.geometry,feature:z.feature})).filter(z=>z.geometry&&z.feature);samples=(st.samples||[]).map(s=>({...s,value:s.value===null?NaN:Number(s.value),zone:null,valid:false}));if(zones.length){const keys=[...new Set(zones.flatMap(z=>Object.keys(z.feature.properties||{})))];$('zoneIdField').innerHTML=keys.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');$('zoneIdField').value=zoneIdKey||keys[0]||'';zoneLayer.clearLayers();zones.forEach(z=>zoneLayer.addData(z.feature));const b=zoneLayer.getBounds();if(b.isValid())map.fitBounds(b.pad(.04));}return true}catch(e){console.warn('Tidak dapat memulihkan state',e);return false}}
 function setAdminMode(on){adminLoggedIn=on;document.body.classList.toggle('admin-mode',on);$('adminBtn').textContent=on?'♟ Admin Aktif · Keluar':'♟ Login Admin';$('adminPassword').value='';$('adminModalTitle').textContent=on?'Pengaturan Admin':'Login Admin';$('adminHelp').textContent=on?'Pengaturan dan pengelolaan data hanya tersedia selama sesi admin ini.':'Login untuk mengelola data dashboard.';$('adminSettings').style.display=on?'grid':'none';$('adminLoginInfo').style.display=on?'none':'block';$('saveAdmin').textContent=on?'Simpan Pengaturan':'Login Admin';}
 async function syncZonesToCloud(){
@@ -76,8 +76,14 @@ async function syncZonesToCloud(){
  if(payload.some(z=>!z.id)) throw new Error('Ada zona tanpa ID. Pilih kolom ID zona yang berisi nilai.');
  const ids=payload.map(z=>z.id); const duplicates=ids.filter((id,i)=>ids.indexOf(id)!==i);
  if(duplicates.length) throw new Error('ID zona duplikat ditemukan ('+[...new Set(duplicates)].slice(0,5).join(', ')+'). Pilih kolom ID yang unik pada atribut zona.');
- const {error}=await db.from('znt_zones').upsert(payload,{onConflict:'id'});
- if(error) throw new Error('Supabase menolak penyimpanan zona: '+error.message+' (kode '+(error.code||'tidak tersedia')+'). Periksa tabel znt_zones dan kebijakan RLS.');
+ // Simpan dalam batch kecil agar GeoJSON besar tidak memicu statement timeout.
+ const batchSize=5;
+ for(let start=0; start<payload.length; start+=batchSize){
+  const batch=payload.slice(start,start+batchSize);
+  const {error}=await db.from('znt_zones').upsert(batch,{onConflict:'id'});
+  if(error) throw new Error('Supabase gagal menyimpan zona '+(start+1)+'–'+Math.min(start+batch.length,payload.length)+' dari '+payload.length+': '+error.message+' (kode '+(error.code||'tidak tersedia')+'). Periksa RLS, ukuran geometri, dan tabel znt_zones.');
+  notice('Menyimpan zona ke Supabase: '+Math.min(start+batch.length,payload.length)+' / '+payload.length+'...');
+ }
  return payload.length;
 }
 async function syncSamplesToCloud(items){if(!CLOUD_ENABLED||!adminLoggedIn)return;const payload=(items||samples).map(s=>({id:String(s.id),lat:num(s.lat),lng:num(s.lng),sample_date:normalizeDate(s.date)||null,value:Number.isFinite(num(s.value))?num(s.value):null,surveyor:s.surveyor||''}));if(!payload.length)return;const {error}=await db.from('znt_samples').upsert(payload,{onConflict:'id'});if(error)throw error;}
