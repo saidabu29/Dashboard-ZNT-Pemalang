@@ -5,7 +5,6 @@
 <title>Dashboard Pemetaan ZNT</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/shpjs@latest/dist/shp.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -19,7 +18,7 @@ body:not(.admin-mode) .admin-only{display:none!important}body.admin-mode .upload
 <header class="top"><div class="brand"><div class="logo">▦</div><div><h1>Dashboard Pemetaan ZNT <span style="color:#75a4ff">Spatial Join</span></h1><p>Pemantauan ketercapaian sampel nilai tanah real-time (Survei Peta ZNT)</p></div></div><div class="actions"><button id="simBtn" class="admin-only">✦ Simulasi Data</button><button id="templateBtn">⇩ Template CSV</button><button class="primary" id="adminBtn">♟ Panel Admin</button></div></header>
 <div class="notice" id="notice"></div>
 <section class="uploadbar admin-only">
- <div class="field"><label>1. LAYER POLYGON ZONA (ZIP SHP / GEOJSON)</label><input type="file" id="zoneFile" accept=".zip,.geojson,.json,.shp"></div>
+ <div class="field"><label>1. LAYER POLYGON ZONA (GEOJSON)</label><input type="file" id="zoneFile" accept=".geojson,.json,application/geo+json,application/json"><small class="muted">Gunakan GeoJSON poligon (.geojson atau .json). Zona akan disimpan ke Supabase setelah login admin.</small></div>
  <div class="field"><label>ATRIBUT ID ZONA SHP</label><select id="zoneIdField"><option value="">Unggah layer zona terlebih dahulu</option></select></div>
  <div class="field"><label>2. UPLOAD CSV SURVEI LOKAL</label><input type="file" id="csvFile" accept=".csv,.txt"></div>
 </section>
@@ -108,31 +107,34 @@ function normalizeDate(value){const raw=String(value??'').trim();if(!raw)return 
 function showZone(id){const z=zones.find(x=>String(x.id)===String(id));if(!z)return;selectedZone=z;$('zoneModalTitle').textContent='Rincian Zona '+z.id;$('zoneDetails').innerHTML=`<p>Jumlah sampel yang masuk zona ini: <b>${z.count}</b></p><div class="formrow"><div><label>ID Zona</label><input value="${escapeHtml(z.id)}" disabled></div><div><label>Target sampel</label><input id="zoneTargetInput" type="number" min="0" value="${z.target}"></div><div style="grid-column:1/-1"><label>Nama Surveyor</label><input id="zoneSurveyorInput" type="text" value="${escapeHtml(z.surveyor||"")}" placeholder="Masukkan nama surveyor untuk zona ini"></div></div><p class="muted">Perubahan target disimpan ke database saat Supabase sudah dikonfigurasi.</p>`;$('zoneModal').classList.add('show')}
 function readCSV(file){Papa.parse(file,{header:true,skipEmptyLines:true,dynamicTyping:false,complete:r=>{if(!r.meta.fields?.length){notice('CSV tidak memiliki header.');return}const fields=r.meta.fields;const latKey=fields.find(k=>['lat','latitude','y','lintang'].includes(norm(k)))||fields.find(k=>norm(k).includes('lat'));const lngKey=fields.find(k=>['lng','lon','longitude','x','bujur'].includes(norm(k)))||fields.find(k=>norm(k).includes('lon'))||fields.find(k=>norm(k).includes('bujur'));if(!latKey||!lngKey){notice('Kolom koordinat tidak ditemukan. Gunakan header latitude dan longitude (atau lat/lon, lintang/bujur).');return}const idKey=fields.find(k=>['id','idsampel','kode','kodesampel','no'].includes(norm(k)))||fields[0];const dateKey=fields.find(k=>['tanggal pelaksanaan sampel','tanggal pelaksanaan','tanggal sampel','tanggal survei','tanggal','tanggalpelaksanaansampel','tanggalpelaksanaan','tanggalsampel','datesurvei','datepelaksanaan','tanggalimplementasi','date','surveydate'].includes(norm(k)))||fields.find(k=>norm(k).includes('tanggal')&&norm(k).includes('pelaksanaan'))||'';const valKey=fields.find(k=>['nilai tanah','nilaitanah','harga','value','hargarpm2','nilai'].includes(norm(k)))||'';const surveyorKey=fields.find(k=>['nama surveyor','namasurveyor','surveyor','petugas','nama petugas'].includes(norm(k)))||'';const incoming=r.data.map((o,i)=>({id:String(o[idKey]||`S-${i+1}`).trim(),lat:num(o[latKey]),lng:num(o[lngKey]),date:dateKey?normalizeDate(o[dateKey]):'',value:valKey?num(o[valKey]):NaN,surveyor:surveyorKey?String(o[surveyorKey]||'').trim():'',raw:o})).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lng));const seen=new Set(samples.map(s=>s.id)),newSamples=[];let added=0,dups=0;incoming.forEach(s=>{if(seen.has(s.id)){dups++;return}seen.add(s.id);samples.push(s);newSamples.push(s);added++});render();if(added)syncSamplesToCloud(newSamples).catch(err=>notice('Gagal menyimpan sampel ke Supabase: '+err.message));notice(`Impor CSV selesai: ${added} sampel ditambahkan, ${dups} ID duplikat dilewati. ${incoming.length-added-dups} baris tidak valid atau tanpa koordinat diabaikan.`)}})}
 $('zoneFile').addEventListener('change',async e=>{
- const file=e.target.files[0]; if(!file)return;
+ const file=e.target.files && e.target.files[0];
+ if(!file)return;
+ const isGeoJSON=/\.(geojson|json)$/i.test(file.name);
+ if(!isGeoJSON){notice('Pilih file .geojson atau .json. ZIP SHP tidak digunakan pada fitur ini.');e.target.value='';return;}
+ notice('Membaca GeoJSON zona...');
  try{
-  let geo;
-  if(file.name.toLowerCase().endsWith('.zip')) geo=await shp(await file.arrayBuffer());
-  else geo=JSON.parse(await file.text());
-  if(Array.isArray(geo)) geo={type:'FeatureCollection',features:geo.flatMap(g=>g.features||[])};
-  if(geo.type!=='FeatureCollection'){notice('GeoJSON harus berupa FeatureCollection.');return;}
-  const features=(geo.features||[]).filter(f=>f.geometry&&['Polygon','MultiPolygon'].includes(f.geometry.type));
-  if(!features.length){notice('Tidak ditemukan poligon di file. Pastikan ZIP SHP berisi layer poligon, bukan titik atau garis.');return;}
+  const parsed=JSON.parse(await file.text());
+  let geo=parsed;
+  if(geo.type==='Feature') geo={type:'FeatureCollection',features:[geo]};
+  if(Array.isArray(geo)) geo={type:'FeatureCollection',features:geo};
+  if(!geo || geo.type!=='FeatureCollection' || !Array.isArray(geo.features)){
+   throw new Error('Format tidak valid. File harus berupa GeoJSON FeatureCollection atau Feature.');
+  }
+  const features=geo.features.filter(f=>f && f.geometry && ['Polygon','MultiPolygon'].includes(f.geometry.type));
+  if(!features.length) throw new Error('Tidak ditemukan geometri Polygon/MultiPolygon. Pastikan GeoJSON zona berupa poligon, bukan titik atau garis.');
   const keys=[...new Set(features.flatMap(f=>Object.keys(f.properties||{})))];
-  if(!keys.length){notice('Shapefile tidak memiliki kolom atribut untuk ID zona. Tambahkan kolom ID unik pada tabel atribut SHP.');return;}
+  if(!keys.length) throw new Error('GeoJSON tidak memiliki kolom atribut. Tambahkan atribut ID zona yang unik.');
   $('zoneIdField').innerHTML=keys.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
   const likely=keys.find(k=>/^(id_zona|idzona|no_zona|zona|id|kode_zona|kode)$/i.test(k))||keys[0];
   $('zoneIdField').value=likely;
-  loadZones(features,likely); $('zoneIdField').dataset.keys=JSON.stringify(keys);
-  try{
-   const savedCount=await syncZonesToCloud();
-   notice(`${features.length} poligon dimuat dan ${savedCount} zona berhasil disimpan ke Supabase.`);
-  }catch(saveErr){
-   console.error('Penyimpanan zona Supabase gagal:',saveErr);
-   notice(`Zona tampil di peta, tetapi GAGAL disimpan ke Supabase: ${saveErr.message}`);
-  }
+  loadZones(features,likely);
+  $('zoneIdField').dataset.keys=JSON.stringify(keys);
+  notice(`GeoJSON terbaca: ${features.length} poligon. Sedang menyimpan ke Supabase...`);
+  const savedCount=await syncZonesToCloud();
+  notice(`Berhasil: ${savedCount} zona tersimpan ke Supabase.`);
  }catch(err){
-  console.error('Pembacaan ZIP SHP gagal:',err);
-  notice('Gagal membaca file. Untuk SHP, unggah ZIP yang berisi .shp, .shx, .dbf dan .prj. Detail: '+err.message);
+  console.error('Impor/penyimpanan GeoJSON zona gagal:',err);
+  notice('Gagal mengimpor/menyimpan GeoJSON: '+(err.message||String(err)));
  }
 });
 function loadZones(features,key){zoneIdKey=key;const priorSamples=samples;zones=features.map((f,i)=>({id:String(f.properties?.[key]??i+1),surveyor:String(f.properties?.NAMA_SURVEYOR??f.properties?.nama_surveyor??''),target:targetDefault,count:0,geometry:f.geometry,feature:{type:'Feature',geometry:f.geometry,properties:{...f.properties,__zoneId:String(f.properties?.[key]??i+1)}}}));samples=priorSamples;render();const b=zoneLayer.getBounds();if(b.isValid())map.fitBounds(b.pad(.04))}
