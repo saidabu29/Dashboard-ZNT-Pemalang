@@ -18,3 +18,15 @@ KEAMANAN:
 - Jangan memasukkan service_role/secret key ke file HTML.
 - Data zona/sampel yang dapat dibaca publik harus memang aman untuk dipublikasikan.
 - Jika upload gagal, buka F12 > Console dan periksa pesan error.
+
+
+Pembaruan fitur:
+- Saat memilih CSV, pilih kolom pada 'KOLOM UNTUK RATA-RATA NILAI TANAH' sebelum menekan 'Muat CSV Terpilih'. Kolom yang dipilih digunakan untuk menghitung rata-rata nilai tanah pada rekapitulasi zona.
+- Klik baris zona pada tabel rekapitulasi untuk zoom peta ke batas zona tersebut. Tombol Rincian tetap membuka detail zona.
+
+
+Pembaruan statistik rekapitulasi:
+- Rata-rata nilai tanah, Standar Deviasi Sampel (SD, pembagi n-1), dan SBR (%) dihitung per zona berdasarkan kolom nilai tanah yang dipilih ketika impor CSV.
+- Rumus SD = akar dari jumlah kuadrat (nilai - rata-rata) dibagi (n-1). SBR = SD / |rata-rata| x 100%.
+- SD ditampilkan sebagai — bila kurang dari dua nilai valid dalam zona; SBR ditampilkan sebagai — bila SD tidak tersedia atau rata-rata nol.
+- Ekspor CSV rekapitulasi mencakup kolom rata-rata, SD, dan SBR.
