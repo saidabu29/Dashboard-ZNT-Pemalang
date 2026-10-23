@@ -30,3 +30,7 @@ Pembaruan statistik rekapitulasi:
 - Rumus SD = akar dari jumlah kuadrat (nilai - rata-rata) dibagi (n-1). SBR = SD / |rata-rata| x 100%.
 - SD ditampilkan sebagai — bila kurang dari dua nilai valid dalam zona; SBR ditampilkan sebagai — bila SD tidak tersedia atau rata-rata nol.
 - Ekspor CSV rekapitulasi mencakup kolom rata-rata, SD, dan SBR.
+
+
+PERBAIKAN PAGINATION DATA SUPABASE
+Dashboard sekarang memuat tabel znt_zones dan znt_samples secara bertahap dengan range 1.000 baris per permintaan hingga seluruh baris selesai dibaca. Impor sampel disimpan dalam batch 500 baris. Setelah memasang, periksa notifikasi jumlah zona dan sampel yang dimuat.

@@ -88,8 +88,43 @@ async function syncZonesToCloud(){
  }
  return payload.length;
 }
-async function syncSamplesToCloud(items){if(!CLOUD_ENABLED||!adminLoggedIn)return;const payload=(items||samples).map(s=>({id:String(s.id),lat:num(s.lat),lng:num(s.lng),sample_date:normalizeDate(s.date)||null,value:Number.isFinite(num(s.value))?num(s.value):null,surveyor:s.surveyor||''}));if(!payload.length)return;const {error}=await db.from('znt_samples').upsert(payload,{onConflict:'id'});if(error)throw error;}
-async function loadCloudData(){const [{data:zs,error:ze},{data:ss,error:se}]=await Promise.all([db.from('znt_zones').select('id,target,surveyor,feature'),db.from('znt_samples').select('id,lat,lng,sample_date,value,surveyor')]);if(ze)throw ze;if(se)throw se;zones=(zs||[]).map(z=>({id:String(z.id),target:Number(z.target??targetDefault),surveyor:z.surveyor||'',count:0,geometry:z.feature?.geometry,feature:z.feature})).filter(z=>z.geometry&&z.feature);samples=(ss||[]).map(s=>({id:String(s.id),lat:Number(s.lat),lng:Number(s.lng),date:s.sample_date?String(s.sample_date).slice(0,10):'',value:s.value==null?NaN:Number(s.value),surveyor:s.surveyor||'',raw:{},zone:null,valid:false}));if(zones.length){const keys=[...new Set(zones.flatMap(z=>Object.keys(z.feature.properties||{})))];$('zoneIdField').innerHTML=keys.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');$('zoneIdField').value=keys.find(k=>k==='__zoneId')||keys[0]||'';}render();if(zones.length){const b=zoneLayer.getBounds();if(b.isValid())map.fitBounds(b.pad(.04));}}
+// Ambil semua baris dengan pagination; Supabase biasanya membatasi satu respons menjadi 1.000 baris.
+async function fetchAllRows(table, columns, pageSize=1000){
+ const all=[]; let start=0;
+ while(true){
+  notice(`Memuat ${table} dari Supabase: ${all.length.toLocaleString('id-ID')} baris...`);
+  const {data,error}=await db.from(table).select(columns).order('id',{ascending:true}).range(start,start+pageSize-1);
+  if(error) throw new Error(`Gagal memuat tabel ${table} mulai baris ${start+1}: ${error.message}`);
+  const batch=data||[]; all.push(...batch);
+  if(batch.length<pageSize) break;
+  start+=batch.length;
+ }
+ return all;
+}
+async function syncSamplesToCloud(items){
+ if(!CLOUD_ENABLED||!adminLoggedIn)return;
+ const payload=(items||samples).map(s=>({id:String(s.id),lat:num(s.lat),lng:num(s.lng),sample_date:normalizeDate(s.date)||null,value:Number.isFinite(num(s.value))?num(s.value):null,surveyor:s.surveyor||''}));
+ if(!payload.length)return;
+ const batchSize=500;
+ for(let start=0;start<payload.length;start+=batchSize){
+  const batch=payload.slice(start,start+batchSize);
+  const {error}=await db.from('znt_samples').upsert(batch,{onConflict:'id'});
+  if(error)throw new Error(`Gagal menyimpan sampel ${start+1}–${Math.min(start+batch.length,payload.length)} dari ${payload.length}: ${error.message}`);
+  notice(`Menyimpan sampel ke Supabase: ${Math.min(start+batch.length,payload.length).toLocaleString('id-ID')} / ${payload.length.toLocaleString('id-ID')}...`);
+ }
+}
+async function loadCloudData(){
+ const [zs,ss]=await Promise.all([
+  fetchAllRows('znt_zones','id,target,surveyor,feature'),
+  fetchAllRows('znt_samples','id,lat,lng,sample_date,value,surveyor')
+ ]);
+ zones=zs.map(z=>({id:String(z.id),target:Number(z.target??targetDefault),surveyor:z.surveyor||'',count:0,geometry:z.feature?.geometry,feature:z.feature})).filter(z=>z.geometry&&z.feature);
+ samples=ss.map(s=>({id:String(s.id),lat:Number(s.lat),lng:Number(s.lng),date:s.sample_date?String(s.sample_date).slice(0,10):'',value:s.value==null?NaN:Number(s.value),surveyor:s.surveyor||'',raw:{},zone:null,valid:false}));
+ if(zones.length){const keys=[...new Set(zones.flatMap(z=>Object.keys(z.feature.properties||{})))];$('zoneIdField').innerHTML=keys.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');$('zoneIdField').value=keys.find(k=>k==='__zoneId')||keys[0]||'';}
+ render();
+ if(zones.length){const b=zoneLayer.getBounds();if(b.isValid())map.fitBounds(b.pad(.04));}
+ notice(`Data Supabase berhasil dimuat: ${zones.length.toLocaleString('id-ID')} zona dan ${samples.length.toLocaleString('id-ID')} sampel.`);
+}
 async function initApp(){if(CLOUD_ENABLED){try{await loadCloudData();notice('Data berhasil dimuat dari Supabase. Dashboard dapat dilihat tanpa login.');const {data}=await db.auth.getSession();if(data.session){const {data:adminRow}=await db.from('znt_admins').select('user_id').eq('user_id',data.session.user.id).maybeSingle();if(adminRow)setAdminMode(true);else await db.auth.signOut();}}catch(e){console.error(e);notice('Supabase belum siap atau gagal memuat data: '+e.message+' Pastikan SQL dan kebijakan akses sudah dipasang.')}}else{restoreState();render();notice('Mode pratinjau lokal: isi konfigurasi Supabase untuk menyinkronkan data antar pengguna.')}}
 function initMap(){map=L.map('map').setView([-7.0,110.2],10);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'© OpenStreetMap contributors'}).addTo(map);zoneLayer=L.geoJSON(null,{style:f=>zoneStyle(f),onEachFeature:(f,l)=>l.on('click',()=>showZone(f.properties.__zoneId))}).addTo(map);sampleLayer=L.layerGroup().addTo(map)}
 function zoneStyle(f){const z=zones.find(x=>String(x.id)===String(f.properties?.__zoneId));let c=colors.empty;if(z&&z.count>0)c=z.count>=z.target?colors.done:colors.less;return{color:'#15253c',weight:1,fillColor:c,fillOpacity:.48}}
