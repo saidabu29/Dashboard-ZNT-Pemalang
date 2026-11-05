@@ -91,3 +91,10 @@ grant insert, update, delete on public.znt_zones, public.znt_samples to authenti
 -- 2. Salin UUID user tersebut.
 -- 3. Ganti UUID_DI_SINI pada query berikut, lalu jalankan query terpisah:
 -- insert into public.znt_admins (user_id) values ('UUID_DI_SINI');
+
+
+-- Indeks tambahan untuk filter dan rekap sampel. Aman dijalankan berulang kali.
+create index if not exists idx_znt_samples_sample_date on public.znt_samples (sample_date);
+create index if not exists idx_znt_samples_surveyor on public.znt_samples (surveyor);
+create index if not exists idx_znt_samples_date_surveyor on public.znt_samples (sample_date, surveyor);
+create index if not exists idx_znt_zones_surveyor on public.znt_zones (surveyor);
